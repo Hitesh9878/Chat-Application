@@ -1,7 +1,7 @@
-// src/contexts/AuthContext.jsx - FIXED VERSION
 import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const AuthContext = createContext();
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -20,38 +20,32 @@ export const AuthProvider = ({ children }) => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
     
-    console.log('🔍 AuthContext: Token exists:', !!token);
-    console.log('🔍 AuthContext: User data exists:', !!userData);
-    
     if (token && userData) {
       try {
         const parsedUser = JSON.parse(userData);
-        console.log('✅ AuthContext: Loaded user from storage:', parsedUser);
+        console.log('✅ AuthContext: Loaded user from storage:', parsedUser.name);
         setUser(parsedUser);
       } catch (e) {
         console.error('❌ AuthContext: Error parsing user data:', e);
         localStorage.removeItem('token');
         localStorage.removeItem('user');
       }
-    } else {
-      console.log('⚠️ AuthContext: No valid auth data found');
     }
     setLoading(false);
   }, []);
 
   const login = (token, userData) => {
-    console.log('🔑 AuthContext: Login called with:', { userData: userData?.name, token: !!token });
+    console.log('🔑 AuthContext: Login called for:', userData?.name);
     
     if (!userData || !token) {
-      console.error('❌ AuthContext: Invalid login data provided');
+      console.error('❌ AuthContext: Invalid login data');
       return;
     }
     
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
-    
-    console.log('✅ AuthContext: User logged in successfully:', userData.name);
+    console.log('✅ AuthContext: User logged in successfully');
   };
 
   const logout = () => {
@@ -70,45 +64,30 @@ export const AuthProvider = ({ children }) => {
         formData.append('avatar', profileData.avatar);
       }
 
-      console.log('🔄 AuthContext: Updating profile with:', {
-        name: profileData.name,
-        hasAvatar: !!profileData.avatar
-      });
+      console.log('🔄 Updating profile via:', `${API_URL}/users/profile`);
 
-      // ✅ FIXED: Correct API endpoint URL
-      const response = await fetch('https://chat-application-fj04.onrender.com/api/users/profile', {
+      const response = await fetch(`${API_URL}/users/profile`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
-          // Don't set Content-Type for FormData - let browser set it with boundary
         },
         body: formData,
       });
 
-      console.log('📡 AuthContext: Profile update response status:', response.status);
-
       if (!response.ok) {
-        let errorMessage = 'Failed to update profile';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorMessage;
-          console.error('❌ AuthContext: Profile update error:', errorData);
-        } catch (e) {
-          errorMessage = response.statusText || errorMessage;
-          console.error('❌ AuthContext: Profile update error (no JSON):', e);
-        }
-        throw new Error(errorMessage);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to update profile');
       }
 
       const updatedUser = await response.json();
-      console.log('✅ AuthContext: Profile updated successfully:', updatedUser);
+      console.log('✅ Profile updated successfully');
 
       setUser(updatedUser);
       localStorage.setItem('user', JSON.stringify(updatedUser));
 
       return updatedUser;
     } catch (error) {
-      console.error('❌ AuthContext: Profile update error:', error);
+      console.error('❌ Profile update error:', error);
       throw error;
     }
   };
