@@ -28,7 +28,7 @@ export const SocketProvider = ({ children }) => {
         return;
       }
 
-      const newSocket = io('http://localhost:5000', {
+      const newSocket = io('https://chat-application-fj04.onrender.com', {
         auth: { token },
         reconnection: true,
         reconnectionDelay: 1000,
