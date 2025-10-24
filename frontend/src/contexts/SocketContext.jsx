@@ -1,9 +1,10 @@
-// src/contexts/SocketContext.jsx - FIXED VERSION (Non-interfering)
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import io from 'socket.io-client';
 import { useAuth } from './AuthContext.jsx';
 
 export const SocketContext = createContext(null);
+
+const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
 
 const isValidJWT = (token) => {
   if (!token || typeof token !== 'string') return false;
@@ -18,88 +19,70 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     if (user) {
-      console.log('🔌 [SOCKET CONTEXT] Connecting socket for user:', user.name, user._id);
+      console.log('🔌 Connecting socket to:', SOCKET_URL);
+      console.log('🔌 User:', user.name, user._id);
 
       const token = localStorage.getItem('token');
 
       if (!isValidJWT(token)) {
-        console.error('❌ [SOCKET CONTEXT] Invalid JWT token found, logging out...');
+        console.error('❌ Invalid JWT token, logging out...');
         logout();
         return;
       }
 
-      const newSocket = io('https://chat-application-fj04.onrender.com', {
+      const newSocket = io(SOCKET_URL, {
         auth: { token },
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5
+        reconnectionAttempts: 5,
+        transports: ['websocket', 'polling'],
+        path: '/socket.io/'
       });
 
       newSocket.on('connect', () => {
-        console.log('✅ [SOCKET CONTEXT] Socket connected:', newSocket.id);
+        console.log('✅ Socket connected:', newSocket.id);
         setTimeout(() => newSocket.emit('loadRecentChats'), 100);
       });
 
       newSocket.on('disconnect', (reason) => {
-        console.log('❌ [SOCKET CONTEXT] Socket disconnected:', reason);
+        console.log('❌ Socket disconnected:', reason);
       });
 
       newSocket.on('connect_error', (error) => {
-        console.error('❌ [SOCKET CONTEXT] Socket connection error:', error);
+        console.error('❌ Socket connection error:', error);
         if (error.message?.includes('Authentication') || error.message?.includes('jwt')) {
-          console.error('❌ [SOCKET CONTEXT] JWT authentication failed, logging out...');
+          console.error('❌ JWT authentication failed, logging out...');
           logout();
         }
       });
 
       newSocket.on('recentChatsLoaded', (chats) => {
-        console.log('📚 [SOCKET CONTEXT] Recent chats loaded:', chats);
+        console.log('📚 Recent chats loaded:', chats.length);
         if (Array.isArray(chats)) setRecentChats(chats);
       });
 
-      // CRITICAL: DO NOT handle newMessageForSidebar here
-      // Let App.jsx and Sidebar.jsx handle it directly
-      // Just log it for debugging
       newSocket.on('newMessageForSidebar', (data) => {
-        console.log('📡 [SOCKET CONTEXT] newMessageForSidebar event received (passing through):', {
+        console.log('📡 New message for sidebar:', {
           messageId: data._id,
           sender: data.sender?.name,
-          isForSender: data.isForSender,
-          isForReceiver: data.isForReceiver,
           chatId: data.chatId
         });
-        // DO NOT process it here - let App.jsx handle it via receiveMessage
-      });
-
-      // Log all events for debugging (excluding noisy ones)
-      newSocket.onAny((eventName, ...args) => {
-        if (!['ping', 'pong'].includes(eventName)) {
-          console.log(`📡 [SOCKET CONTEXT] Event: ${eventName}`, args[0]);
-        }
       });
 
       setSocket(newSocket);
 
       return () => {
-        console.log('🔌 [SOCKET CONTEXT] Closing socket connection');
+        console.log('🔌 Closing socket connection');
         newSocket.close();
       };
     } else if (socket) {
-      console.log('🔌 [SOCKET CONTEXT] User logged out, closing socket');
+      console.log('🔌 User logged out, closing socket');
       socket.close();
       setSocket(null);
       setRecentChats([]);
     }
   }, [user, logout]);
-
-  useEffect(() => {
-    console.log('🔍 [SOCKET CONTEXT] Socket state changed:', {
-      exists: !!socket,
-      connected: socket?.connected,
-      id: socket?.id
-    });
-  }, [socket]);
 
   return (
     <SocketContext.Provider value={socket}>
