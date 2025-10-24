@@ -1,4 +1,3 @@
-// server.js - DEPLOYMENT READY VERSION (All Features Retained)
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -16,176 +15,150 @@ import { errorHandler, notFound } from './src/middlewares/errorHandler.js';
 import { initializeSocket } from './src/sockets/index.js';
 
 dotenv.config();
+
+// Connect to MongoDB
 connectDB();
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ---------------------
-// ✅ CORS Configuration
-// ---------------------
-const allowedOrigin = process.env.FRONTEND_URL || 'http://localhost:3000';
-app.use(
-  cors({
-    origin: allowedOrigin,
+// CORS configuration - PRODUCTION READY
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:3000',
+  'http://localhost:3001'
+].filter(Boolean); // Remove undefined values
+
+console.log('🌐 CORS allowed origins:', allowedOrigins);
+
+app.use(cors({
+    origin: function(origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.warn('⚠️ CORS blocked origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
-  })
-);
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-// ---------------------
-// ✅ Body Parsers
-// ---------------------
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Body parsing middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// ---------------------
-// ✅ Static Files Setup
-// ---------------------
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-console.log('📁 Serving static files from:', path.join(__dirname, 'public'));
-console.log('📁 Uploads directory:', path.join(__dirname, 'public/uploads'));
-
-// ---------------------
-// ✅ Force HTTPS in Production
-// ---------------------
-if (process.env.NODE_ENV === 'production') {
-  app.use((req, res, next) => {
-    if (req.headers['x-forwarded-proto'] !== 'https') {
-      return res.redirect('https://' + req.headers.host + req.url);
-    }
-    next();
-  });
-}
-
-// ---------------------
-// ✅ Health Check Endpoint
-// ---------------------
+// Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    message: 'Chat API is running...',
-    timestamp: new Date(),
-    version: '2.0.0',
-    environment: process.env.NODE_ENV || 'development',
-    features: [
-      'Chat Requests',
-      'Block Users',
-      'Incognito Mode (3-hour auto-delete)',
-      'Real-time Messaging',
-      'File Sharing',
-      'Video Calls',
-    ],
-  });
+    res.status(200).json({
+        message: 'Chat API is running...',
+        environment: process.env.NODE_ENV || 'development',
+        timestamp: new Date(),
+        version: '2.0.0',
+        features: [
+            'Chat Requests',
+            'Block Users',
+            'Incognito Mode',
+            'Real-time Messaging',
+            'File Sharing',
+            'Video Calls'
+        ]
+    });
 });
 
-// ---------------------
-// ✅ API Routes
-// ---------------------
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/upload', uploadRoutes);
 
-// ---------------------
-// ✅ Root Endpoint
-// ---------------------
+// Root endpoint
 app.get('/', (req, res) => {
-  res.send('🚀 Chat API Server is Running Successfully.');
+    res.json({
+        message: 'Chat API Server is Running',
+        version: '2.0.0',
+        endpoints: {
+            health: '/api/health',
+            auth: '/api/auth',
+            messages: '/api/messages',
+            users: '/api/users',
+            upload: '/api/upload'
+        }
+    });
 });
 
-// ---------------------
-// ✅ Error Handlers
-// ---------------------
+// Error Handling Middlewares
 app.use(notFound);
 app.use(errorHandler);
 
-// ---------------------
-// ✅ Create HTTP Server
-// ---------------------
+// Create HTTP server
 const server = http.createServer(app);
 
-// ---------------------
-// ✅ Socket.IO Setup
-// ---------------------
+// Configure Socket.IO - PRODUCTION READY
 const io = new Server(server, {
-  cors: {
-    origin: allowedOrigin,
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
-  transports: ['websocket', 'polling'],
-  reconnection: true,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-  reconnectionAttempts: 5,
+    cors: {
+        origin: allowedOrigins,
+        methods: ['GET', 'POST'],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    reconnectionAttempts: 5,
+    path: '/socket.io/',
+    allowEIO3: true
 });
 
+// Initialize socket handlers
 initializeSocket(io);
 
-// ---------------------
-// ✅ Error & Exit Handling
-// ---------------------
+// Server error handling
 server.on('error', (err) => {
-  console.error('❌ Server error:', err);
-  if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use. Please use a different port.`);
-    process.exit(1);
-  }
+    console.error('❌ Server error:', err);
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use.`);
+        process.exit(1);
+    }
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('⚠️ Unhandled Rejection at:', promise, 'reason:', reason);
-});
+// Graceful shutdown
+const gracefulShutdown = () => {
+    console.log('\n🛑 Shutting down gracefully...');
+    server.close(() => {
+        console.log('✅ Server closed');
+        process.exit(0);
+    });
+    
+    // Force close after 10 seconds
+    setTimeout(() => {
+        console.error('⚠️ Forcing shutdown...');
+        process.exit(1);
+    }, 10000);
+};
 
-process.on('uncaughtException', (err) => {
-  console.error('💥 Uncaught Exception:', err);
-  process.exit(1);
-});
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('\nSIGINT received. Shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
-// ---------------------
-// ✅ Start Server
-// ---------------------
+// Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log('\n' + '='.repeat(60));
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🔗 Frontend URL: ${allowedOrigin}`);
-  console.log(`🌐 Backend URL: http://localhost:${PORT}`);
-  console.log(`📁 Uploads available at: http://localhost:${PORT}/uploads/`);
-  console.log('\n🎯 Features enabled:');
-  console.log('   - ✉️  Chat Requests');
-  console.log('   - 🚫 Block Users');
-  console.log('   - 🕵️  Incognito Mode (3-hour auto-delete)');
-  console.log('   - 💬 Real-time Messaging');
-  console.log('   - 📎 File Sharing');
-  console.log('   - 📹 Video Calls');
-  console.log('\n📡 API Endpoints:');
-  console.log('   - POST   /api/auth/register');
-  console.log('   - POST   /api/auth/login');
-  console.log('   - GET    /api/users/search?q=<query>');
-  console.log('   - GET    /api/users/search/users?q=<query>');
-  console.log('   - GET    /api/users/friends/list');
-  console.log('   - GET    /api/users/blocked/list');
-  console.log('   - PATCH  /api/users/status/update');
-  console.log('='.repeat(60) + '\n');
+    console.log('\n' + '='.repeat(70));
+    console.log(`✅ Server running in ${process.env.NODE_ENV || 'development'} mode`);
+    console.log(`🌐 Port: ${PORT}`);
+    console.log(`🔗 Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+    console.log(`📁 Uploads: http://localhost:${PORT}/uploads/`);
+    console.log('\n🎯 Features: Chat Requests | Block | Incognito | Real-time | Files | Video');
+    console.log('='.repeat(70) + '\n');
 });
 
 export default app;
