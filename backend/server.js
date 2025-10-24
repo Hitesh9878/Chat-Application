@@ -27,6 +27,7 @@ const __dirname = path.dirname(__filename);
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   'http://localhost:3000',
+  'https://lovebirds-six.vercel.app',
   'http://localhost:3001'
 ].filter(Boolean); // Remove undefined values
 
